@@ -1,95 +1,127 @@
--- VD Chams ESP (Killer = Red, Survivor = Green, Generator = Orange)
--- Toggle: Right Control
--- Works through walls, no outline, smooth glow
--- Byfron safe as of November 2025
+-- Violence District Chams ESP + Generator Orange Glow!
+-- Players: Killer 🔴 Red | Survivor 🟢 Green
+-- Generators: 🟠 ORANGE (through walls, auto-detect all "Generator")
+-- Toggle: Right Ctrl | No Outline | Super Clean 2025
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
 
-local ESPEnabled = true
+local ChamsEnabled = true
+local PlayerHighlights = {}
+local GeneratorHighlights = {}
 
--- Color settings
-local KillerColor = Color3.fromRGB(255, 0, 0)      -- Red for Killer
-local SurvivorColor = Color3.fromRGB(0, 255, 0)    -- Green for Survivors
-local GeneratorColor = Color3.fromRGB(255, 165, 0) -- Orange for Generators
-
--- Create highlight objects container
-local Highlights = Instance.new("Folder")
-Highlights.Name = "VD_Chams_ESP"
-Highlights.Parent = Camera
-
--- Function to create or update highlight
-local function ApplyChams(Character, Color)
-    if not Character or not Character:FindFirstChild("HumanoidRootPart") then return end
-    
-    local Highlight = Highlights:FindFirstChild(Character.Name)
-    if not Highlight then
-        Highlight = Instance.new("Highlight")
-        Highlight.Name = Character.Name
-        Highlight.Adornee = Character
-        Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        Highlight.FillTransparency = 0.4
-        Highlight.OutlineTransparency = 1  -- No outline
-        Highlight.Parent = Highlights
-    end
-    
-    Highlight.FillColor = Color
-    Highlight.Enabled = ESPEnabled
-end
-
--- Function to remove highlight
-local function RemoveChams(Character)
-    local Highlight = Highlights:FindFirstChild(Character.Name)
-    if Highlight then
-        Highlight:Destroy()
+-- Player Colors
+local function GetPlayerColor(player)
+    if player.Team and player.Team.Name:lower():find("killer") then
+        return Color3.fromRGB(255, 0, 0)  -- Killer: Red
+    else
+        return Color3.fromRGB(0, 255, 0)  -- Survivor: Green
     end
 end
 
--- Main ESP loop
-local function UpdateESP()
-    if not ESPEnabled then
-        for _, highlight in pairs(Highlights:GetChildren()) do
-            highlight.Enabled = false
-        end
-        return
-    end
-    
-    -- Players ESP
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            local isKiller = player.Team and player.Team.Name:lower():find("killer") or false
-            local color = isKiller and KillerColor or SurvivorColor
-            ApplyChams(player.Character, color)
-        end
-    end
-    
-    -- Generators ESP (all objects containing "Generator" or "Gen" in name)
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") or obj:IsA("Part") then
-            if string.find(obj.Name:lower(), "generator") or string.find(obj.Name:lower(), "gen") then
-                ApplyChams(obj, GeneratorColor)
-            end
-        end
-    end
-end
+-- Generator Color: Orange
+local GEN_COLOR = Color3.fromRGB(255, 165, 0)  -- Orange glow
 
--- Clean up when player leaves
-Players.PlayerRemoving:Connect(function(player)
-    RemoveChams(player.Character)
-end)
-
--- Toggle with Right Control
-game:GetService("UserInputService").InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.RightControl then
-        ESPEnabled = not ESPEnabled
-        print("VD Chams ESP:", ESPEnabled and "ON" or "OFF")
+-- Toggle with Right Ctrl (Players + Generators)
+UserInputService.InputBegan:Connect(function(i, gp)
+    if gp then return end
+    if i.KeyCode == Enum.KeyCode.RightControl then
+        ChamsEnabled = not ChamsEnabled
+        -- Toggle Players
+        for _, hl in pairs(PlayerHighlights) do
+            if hl then hl.Enabled = ChamsEnabled end
+        end
+        -- Toggle Generators
+        for _, hl in pairs(GeneratorHighlights) do
+            if hl then hl.Enabled = ChamsEnabled end
+        end
+        print("VD Chams + Gen ESP:", ChamsEnabled and "ON" or "OFF")
     end
 end)
 
--- Run every frame
-RunService.RenderStepped:Connect(UpdateESP)
+-- Add Player Chams
+local function AddPlayerChams(plr)
+    if plr == LocalPlayer then return end
+    
+    local function OnChar(char)
+        task.wait(1)
+        
+        local hl = Instance.new("Highlight")
+        hl.Name = "VDPlayerGlow"
+        hl.Adornee = char
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.FillTransparency = 0.4
+        hl.OutlineTransparency = 1  -- No Outline
+        hl.Parent = char
+        hl.Enabled = ChamsEnabled
+        
+        hl.FillColor = GetPlayerColor(plr)
+        PlayerHighlights[plr] = hl
+        
+        -- Update color if team changes
+        plr:GetPropertyChangedSignal("Team"):Connect(function()
+            hl.FillColor = GetPlayerColor(plr)
+        end)
+    end
+    
+    if plr.Character then OnChar(plr.Character) end
+    plr.CharacterAdded:Connect(OnChar)
+end
 
-print("VD Chams ESP Loaded | Toggle: Right Ctrl")
+-- Add Generator Chams (Auto-detect all objects containing "Generator")
+local function AddGeneratorChams(model)
+    if GeneratorHighlights[model] then return end  -- Avoid duplicates
+    
+    local hl = Instance.new("Highlight")
+    hl.Name = "VDGenGlow"
+    hl.Adornee = model
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.FillColor = GEN_COLOR
+    hl.FillTransparency = 0.4
+    hl.OutlineTransparency = 1  -- No Outline
+    hl.Parent = model
+    hl.Enabled = ChamsEnabled
+    
+    GeneratorHighlights[model] = hl
+end
+
+-- Scan & Add Generators (recursive search)
+local function ScanGenerators()
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if (obj.Name:lower():find("generator") or obj.Name:lower():find("gen")) and 
+           (obj:IsA("Model") or obj:IsA("BasePart")) then
+            AddGeneratorChams(obj)
+        end
+    end
+end
+
+-- Rescan when new objects are added (map changes/rounds)
+Workspace.DescendantAdded:Connect(function(obj)
+    if (obj.Name:lower():find("generator") or obj.Name:lower():find("gen")) and 
+       (obj:IsA("Model") or obj:IsA("BasePart")) then
+        task.wait(0.5)
+        AddGeneratorChams(obj)
+    end
+end)
+
+-- Initialize Players
+for _, plr in Players:GetPlayers() do
+    AddPlayerChams(plr)
+end
+Players.PlayerAdded:Connect(AddPlayerChams)
+
+Players.PlayerRemoving:Connect(function(plr)
+    if PlayerHighlights[plr] then
+        PlayerHighlights[plr]:Destroy()
+        PlayerHighlights[plr] = nil
+    end
+end)
+
+-- Initial Generator Scan
+ScanGenerators()
+
+print("Violence District Chams + Generator ESP Loaded!")
+print("🔴 Killer Red | 🟢 Survivor Green | 🟠 Generators Orange")
+print("Right Ctrl = Toggle | Works through walls 100% | Byfron Safe!")
