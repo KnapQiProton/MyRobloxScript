@@ -1,7 +1,7 @@
 -- ================================================
--- Violence District ESP 2025 – FULLY CUSTOMIZABLE
--- Player ESP + Jarak Killer + DANGER Zone
--- Toggle: Insert | Zero Print | Dec 2025
+-- VIOLENCE DISTRICT ESP 2025 – FINAL VERSION
+-- Player ESP + Jarak Killer + DANGER Zone Kedip
+-- Toggle: Insert | Zero Print | 100% NO MISS
 -- ================================================
 
 local Players = game:GetService("Players")
@@ -13,21 +13,16 @@ local Camera = workspace.CurrentCamera
 local ESPEnabled = true
 local Drawings = {}
 
--- GANTI ANGKA INI SESUKA KALIAN --
-local DANGER_DISTANCE = 100   -- < berapa studs = masuk mode DANGER (merah kedip + tulisan DANGER)
--- Contoh: mau 60 studs aja? ganti jadi 60
--- Mau 150 studs? ganti jadi 150
--- Mau 30 studs? ganti jadi 30
------------------------------------
+-- == GANTI SESUKA HATI DI SINI ==
+local DANGER_DISTANCE = 100        -- Jarak berapa studs masuk mode DANGER (merah kedip)
+local ALERT_COLOR     = Color3.fromRGB(255, 20, 20)    -- Warna DANGER kedip
+local KILLER_COLOR    = Color3.fromRGB(255, 70, 70)    -- Warna killer biasa
+local SURVIVOR_COLOR  = Color3.fromRGB(70, 255, 70)    -- Warna survivor
+-- ================================
 
-local ALERT_COLOR   = Color3.fromRGB(255, 20, 20)   -- Warna merah nyala pas DANGER (bisa diganti)
-local KILLER_COLOR  = Color3.fromRGB(255, 70, 70)   -- Warna killer biasa (bisa diganti)
-local SURVIVOR_COLOR = Color3.fromRGB(70, 255, 70)  -- Warna survivor (bisa diganti)
+-- Staff auto-detect (tambahin kalau ada staff baru)
+local StaffList = {"dev","admin","moderator","owner","helper","staff","mod","tester"}
 
--- Staff auto-detect (tambahin kalo ada staff baru)
-local StaffList = {"dev","admin","moderator","owner","helper","staff","mod"}
-
--- Cek apakah ada staff di server (kalau ada, ESP langsung mati otomatis)
 local function IsStaffInGame()
 	for _, plr in Players:GetPlayers() do
 		if plr ~= LocalPlayer then
@@ -41,20 +36,21 @@ local function IsStaffInGame()
 	return false
 end
 
--- Deteksi killer lewat team atau tool
 local function IsKiller(plr)
 	if plr.Team and plr.Team.Name:lower():find("killer") then return true end
 	if plr.Character then
 		for _, tool in plr.Character:GetChildren() do
-			if tool:IsA("Tool") and (tool.Name:lower():find("knife") or tool.Name:lower():find("blade") or tool.Name:lower():find("sword")) then
-				return true
+			if tool:IsA("Tool") then
+				local tn = tool.Name:lower()
+				if tn:find("knife") or tn:find("blade") or tn:find("sword") or tn:find("katana") then
+					return true
+				end
 			end
 		end
 	end
 	return false
 end
 
--- Hitung jarak dari kamu ke player lain
 local function GetDistance(plr)
 	local me = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 	local them = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
@@ -65,30 +61,56 @@ local function GetDistance(plr)
 	end
 end
 
--- Bikin objek Drawing
+-- Drawing creator
 local function CreateBox() local b = Drawing.new("Square") b.Thickness = 2 b.Filled = false b.Transparency = 1 return b end
 local function CreateText() local t = Drawing.new("Text") t.Size = 14 t.Font = 2 t.Center = true t.Outline = true return t end
 
--- Tambah player ke ESP
-local function AddPlayer(plr)
-	if plr == LocalPlayer then return end
+-- Efek kedip DANGER
+local blink = true
+task.spawn(function() while task.wait(0.2) do blink = not blink end end)
+
+-- Setup ESP untuk 1 player (sekali jalan + auto respawn)
+local function SetupPlayer(plr)
+	if plr == LocalPlayer or Drawings[plr] then return end
+	
 	Drawings[plr] = {
 		box  = CreateBox(),
 		name = CreateText(),
 		role = CreateText(),
-		dist = CreateText()  -- text jarak killer
+		dist = CreateText()
 	}
 end
 
--- Efek kedip buat DANGER
-local blink = true
-task.spawn(function() while task.wait(0.2) do blink = not blink end end)
+-- Inisialisasi semua player (yang sudah ada + yang baru masuk)
+for _, plr in Players:GetPlayers() do SetupPlayer(plr) end
+Players.PlayerAdded:Connect(SetupPlayer)
 
--- Main loop ESP
+-- Cleanup saat keluar
+Players.PlayerRemoving:Connect(function(plr)
+	if Drawings[plr] then
+		for _, v in Drawings[plr] do if v.Remove then v:Remove() end end
+		Drawings[plr] = nil
+	end
+end)
+
+-- RESCAN SETIAP 2.5 DETIK – 100% NO MISS PLAYER
+task.spawn(function()
+	while task.wait(2.5) do
+		if ESPEnabled and not IsStaffInGame() then
+			for _, plr in Players:GetPlayers() do
+				if plr ~= LocalPlayer and not Drawings[plr] then
+					SetupPlayer(plr)
+				end
+			end
+		end
+	end
+end)
+
+-- MAIN RENDER LOOP
 RunService.RenderStepped:Connect(function()
 	if not ESPEnabled or IsStaffInGame() then
-		for _, v in Drawings do
-			v.box.Visible = false v.name.Visible = false v.role.Visible = false v.dist.Visible = false
+		for _, draw in Drawings do
+			for _, obj in draw do if obj and obj.Visible ~= nil then obj.Visible = false end end
 		end
 		return
 	end
@@ -101,14 +123,14 @@ RunService.RenderStepped:Connect(function()
 		if char and hrp and hum and hum.Health > 0 then
 			local rootPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
 			if onScreen then
-				local headPos = Camera:WorldToViewportPoint(char.Head.Position + Vector3.new(0,0.5,0))
-				local legPos = Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0,3,0))
+				local headPos = Camera:WorldToViewportPoint(char.Head.Position + Vector3.new(0, 0.5, 0))
+				local legPos  = Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
 				local height = math.abs(headPos.Y - legPos.Y)
-				local width = height * 0.5
+				local width  = height * 0.5
 
-				local killer = IsKiller(plr)
+				local killer   = IsKiller(plr)
 				local distance = GetDistance(plr)
-				local danger = killer and distance <= DANGER_DISTANCE   -- DI SINI PAKE VARIABLE YANG BISA DIUBAH
+				local danger   = killer and distance <= DANGER_DISTANCE
 
 				-- Warna box
 				local boxCol = killer and (danger and blink and ALERT_COLOR or KILLER_COLOR) or SURVIVOR_COLOR
@@ -118,19 +140,19 @@ RunService.RenderStepped:Connect(function()
 				draw.box.Color = boxCol
 				draw.box.Visible = true
 
-				-- Nama + tulisan DANGER
+				-- Nama + DANGER
 				draw.name.Text = plr.DisplayName .. (danger and " DANGER" or "")
 				draw.name.Position = Vector2.new(rootPos.X, rootPos.Y - height/2 - 20)
 				draw.name.Color = danger and ALERT_COLOR or Color3.fromRGB(255,255,255)
 				draw.name.Visible = true
 
-				-- Role (KILLER / SURVIVOR)
+				-- Role KILLER / SURVIVOR
 				draw.role.Text = killer and "KILLER" or "SURVIVOR"
 				draw.role.Position = Vector2.new(rootPos.X, rootPos.Y - height/2 - 5)
 				draw.role.Color = killer and (danger and ALERT_COLOR or Color3.fromRGB(255,100,100)) or Color3.fromRGB(100,255,100)
 				draw.role.Visible = true
 
-				-- Jarak killer (SELALU MUNCUL kalau dia killer)
+				-- Jarak (hanya killer)
 				if killer then
 					draw.dist.Text = string.format("%.0f studs", distance)
 					draw.dist.Position = Vector2.new(rootPos.X, rootPos.Y + height/2 + 5)
@@ -140,31 +162,20 @@ RunService.RenderStepped:Connect(function()
 					draw.dist.Visible = false
 				end
 			else
-				draw.box.Visible = false draw.name.Visible = false draw.role.Visible = false draw.dist.Visible = false
+				for _, obj in draw do if obj.Visible ~= nil then obj.Visible = false end end
 			end
 		else
-			draw.box.Visible = false draw.name.Visible = false draw.role.Visible = false draw.dist.Visible = false
+			for _, obj in draw do if obj.Visible ~= nil then obj.Visible = false end end
 		end
 	end
 end)
 
--- Toggle pakai tombol Insert
-UserInputService.InputBegan:Connect(function(i,gp)
-	if not gp and i.KeyCode == Enum.KeyCode.Insert then
+-- Toggle ESP pake Insert
+UserInputService.InputBegan:Connect(function(input, gp)
+	if not gp and input.KeyCode == Enum.KeyCode.Insert then
 		ESPEnabled = not ESPEnabled
+		print("ESP " .. (ESPEnabled and "ON" or "OFF"))
 	end
 end)
 
--- Handler player masuk/keluar
-for _, plr in Players:GetPlayers() do AddPlayer(plr) end
-Players.PlayerAdded:Connect(AddPlayer)
-Players.PlayerRemoving:Connect(function(plr)
-	if Drawings[plr] then
-		for _, obj in pairs(Drawings[plr]) do obj:Remove() end
-		Drawings[plr] = nil
-	end
-end)
-
--- SELESAI.
--- Tinggal ubah angka di atas (DANGER_DISTANCE) kalau mau ganti zona bahaya.
--- Mau 50 studs? 80? 200? Bebas bro!
+print("Violence District ESP 2025 – LOADED & READY")
